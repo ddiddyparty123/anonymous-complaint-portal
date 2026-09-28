@@ -56,6 +56,7 @@ textarea{min-height:160px;resize:vertical}
 select:focus,textarea:focus{outline:2px solid #93c5fd;border-color:#2563eb}
 button{width:100%;margin-top:24px;padding:14px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
 button:hover{background:#1e40af}
+button:disabled{opacity:.7;cursor:not-allowed}
 .note{margin-top:20px;padding:13px;border-radius:8px;background:#eff6ff;color:#1e40af;font-size:13px;line-height:1.5}
 .success,.error{padding:13px;border-radius:8px;margin:0 0 18px;text-align:center}
 .success{background:#dcfce7;color:#166534}.error{background:#fee2e2;color:#991b1b}
@@ -84,7 +85,7 @@ button:hover{background:#1e40af}
 <label for="complaint">Describe Your Complaint</label>
 <textarea name="complaint" id="complaint" maxlength="5000" required
 placeholder="Explain your concern here. Please avoid including names or other identifying details."></textarea>
-<button type="submit">Submit Complaint</button>
+<button type="submit" id="submit-btn">Submit Complaint</button>
 </form>
 <div class="note">This form does not ask for your name or email. Avoid including identifying personal information in your complaint.</div>
 </main>
@@ -92,6 +93,8 @@ placeholder="Explain your concern here. Please avoid including names or other id
 const category=document.getElementById("category");
 const subjectBox=document.getElementById("subject-box");
 const subject=document.getElementById("subject");
+const form=document.querySelector("form");
+const submitBtn=document.getElementById("submit-btn");
 function updateSubject(){
   const isTeacher=category.value==="teacher";
   subjectBox.classList.toggle("hidden",!isTeacher);
@@ -100,6 +103,11 @@ function updateSubject(){
 }
 category.addEventListener("change",updateSubject);
 updateSubject();
+form.addEventListener("submit", function(e){
+  if (!form.checkValidity()) return;
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Submitting...";
+});
 </script>
 </body></html>
 """
@@ -125,49 +133,51 @@ def home():
             try:
                 conn = get_db()
                 cursor = conn.cursor()
-                table = CATEGORIES[category]
+                table = CATEGORIES[category]  # Fixed allow-list, not user SQL.
 
-# Check for an identical complaint submitted in the last 5 minutes
-if category == "teacher":
-    cursor.execute(
-        f"""
-        SELECT complaint_id
-        FROM {table}
-        WHERE subject = %s
-          AND complaint = %s
-          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
-        LIMIT 1
-        """,
-        (subject, complaint)
-    )
-else:
-    cursor.execute(
-        f"""
-        SELECT complaint_id
-        FROM {table}
-        WHERE complaint = %s
-          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
-        LIMIT 1
-        """,
-        (complaint,)
-    )
+                # Prevent accidental duplicate submissions within 5 minutes.
+                if category == "teacher":
+                    cursor.execute(
+                        f"""
+                        SELECT complaint_id
+                        FROM {table}
+                        WHERE subject = %s
+                          AND complaint = %s
+                          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
+                        LIMIT 1
+                        """,
+                        (subject, complaint)
+                    )
+                else:
+                    cursor.execute(
+                        f"""
+                        SELECT complaint_id
+                        FROM {table}
+                        WHERE complaint = %s
+                          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
+                        LIMIT 1
+                        """,
+                        (complaint,)
+                    )
 
-if cursor.fetchone():
-    error = "This complaint was already submitted recently. Please wait before submitting it again."
-else:
-    if category == "teacher":
-        cursor.execute(
-            f"INSERT INTO {table} (subject, complaint) VALUES (%s, %s)",
-            (subject, complaint)
-        )
-    else:
-        cursor.execute(
-            f"INSERT INTO {table} (complaint) VALUES (%s)",
-            (complaint,)
-        )
-
-    conn.commit()
-    success = True
+                if cursor.fetchone():
+                    error = (
+                        "This complaint was already submitted recently. "
+                        "Please wait before submitting it again."
+                    )
+                else:
+                    if category == "teacher":
+                        cursor.execute(
+                            f"INSERT INTO {table} (subject, complaint) VALUES (%s, %s)",
+                            (subject, complaint)
+                        )
+                    else:
+                        cursor.execute(
+                            f"INSERT INTO {table} (complaint) VALUES (%s)",
+                            (complaint,)
+                        )
+                    conn.commit()
+                    success = True
             except (Error, KeyError, ValueError):
                 if conn:
                     conn.rollback()
