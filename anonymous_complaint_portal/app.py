@@ -127,17 +127,45 @@ def home():
                 cursor = conn.cursor()
                 table = CATEGORIES[category]  # Fixed allow-list, not user SQL.
                 if category == "teacher":
-                    cursor.execute(
-                        f"INSERT INTO {table} (subject, complaint) VALUES (%s, %s)",
-                        (subject, complaint)
-                    )
-                else:
-                    cursor.execute(
-                        f"INSERT INTO {table} (complaint) VALUES (%s)",
-                        (complaint,)
-                    )
-                conn.commit()
-                success = True
+    cursor.execute(
+        f"""
+        SELECT complaint_id
+        FROM {table}
+        WHERE subject = %s
+          AND complaint = %s
+          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
+        LIMIT 1
+        """,
+        (subject, complaint)
+    )
+else:
+    cursor.execute(
+        f"""
+        SELECT complaint_id
+        FROM {table}
+        WHERE complaint = %s
+          AND submitted_at >= (NOW() - INTERVAL 5 MINUTE)
+        LIMIT 1
+        """,
+        (complaint,)
+    )
+
+if cursor.fetchone():
+    error = "This complaint was already submitted recently. Please wait before submitting it again."
+else:
+    if category == "teacher":
+        cursor.execute(
+            f"INSERT INTO {table} (subject, complaint) VALUES (%s, %s)",
+            (subject, complaint)
+        )
+    else:
+        cursor.execute(
+            f"INSERT INTO {table} (complaint) VALUES (%s)",
+            (complaint,)
+        )
+
+    conn.commit()
+    success = True
             except (Error, KeyError, ValueError):
                 if conn:
                     conn.rollback()
