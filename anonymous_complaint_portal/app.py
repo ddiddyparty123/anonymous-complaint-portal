@@ -125,8 +125,10 @@ def home():
             try:
                 conn = get_db()
                 cursor = conn.cursor()
-                table = CATEGORIES[category]  # Fixed allow-list, not user SQL.
-                if category == "teacher":
+                table = CATEGORIES[category]
+
+# Check for an identical complaint submitted in the last 5 minutes
+if category == "teacher":
     cursor.execute(
         f"""
         SELECT complaint_id
